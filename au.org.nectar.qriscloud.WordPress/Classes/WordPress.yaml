@@ -1,0 +1,179 @@
+#  Copyright 2017 Queensland Cyber Infrastructure Foundation
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+Namespaces:
+  =: au.org.nectar.qriscloud
+  std: io.murano
+  sys: io.murano.system
+  conf: io.murano.configuration
+
+Name: WordPress
+
+Extends: std:Application
+
+Properties:
+  server:
+    Contract: $.class(LAMPBase).notNull()
+  mysqlPasswd:
+    Contract: $.string().notNull()
+  database:
+    Contract: $.string().notNull()
+  username:
+    Contract: $.string().notNull()
+  password:
+    Contract: $.string().notNull()
+
+Methods:
+  initialize:
+    Body:
+      - $._environment: $.find(std:Environment).require()
+      - $._debug: true
+      - $._linuxLib: null
+      - $._wp_dir: '/usr/share/wordpress'
+      - $._wp_config: '/etc/wordpress/wp-config.php'
+      - $._wp_extra_exclude: ''
+
+  deploy:
+    Body:
+      - If: not $.getAttr(deployed,false)
+        Then:
+          - $._environment.reporter.report($this,'Ensuring LAMP is deployed.')
+          - $.server.deploy()
+          - $._environment.reporter.report($this,'Deploying WordPress')
+          - $._linuxLib: new(LinuxUtilLib,$,instance => $.server.instance)
+          - $distId: $._linuxLib.distId()
+          - $distVersion: $._linuxLib.distVersion()
+          - $packageList: 'wordpress'
+          - $._linuxLib.packageDeploy($packageList)
+          - If: $distId = 'ubuntu'
+            Then:
+              - $._wp_config: '/etc/wordpress/config-default.php'
+              - $._linuxLib.cpFile('/usr/share/wordpress/wp-config-sample.php',$._wp_config)
+              - $._linuxLib.chownFile($._wp_config,'root',$._linuxLib.wwwGrp())
+              - $._linuxLib.groupReadFile($._wp_config)
+              - $wp_a2conf: |
+                  Alias /wordpress {0}
+                  
+                  <Directory {0}/>
+                      Options +FollowSymLinks
+                      AllowOverride All
+                      order allow,deny
+                      allow from all
+                  </Directory>
+              - conf:Linux.putFile($.server.instance.agent,format($wp_a2conf,$._wp_dir),'/etc/apache2/conf-available/wordpress.conf')
+              - $script: |
+                  #!/bin/bash
+                  sudo a2enconf wordpress
+                  sudo a2enmod rewrite
+              - conf:Linux.runCommand($.server.instance.agent,format($script,$._wp_dir))
+              - $._wp_extra_exclude: |
+                  + /var/lib/wordpress
+          - If: $distId = 'centos'
+            Then:
+              - $script: |
+                  #!/bin/bash
+                  sudo sed -i 's/^\([ \t]*Require local\)$/#\1\n    Require all granted/' \
+                    /etc/httpd/conf.d/wordpress.conf
+              - conf:Linux.runCommand($.server.instance.agent,$script)
+              - $._linuxLib.serviceCmd('restart','mysql')
+          - $._linuxLib.serviceCmd('restart','apache')
+          - $._environment.reporter.report($this,'WordPress is deployed')
+          - $.setAttr(deployed,true)
+          - $.configure($.mysqlPasswd,$.database,$.username,$.password)
+
+  configure:
+    Arguments:
+      - mysqlPasswd:
+          Contract: $.string().notNull()
+      - database:
+          Contract: $.string().notNull()
+      - username:
+          Contract: $.string().notNull()
+      - password:
+          Contract: $.string().notNull()
+    Body:
+      - $.deploy()
+      - $._environment.reporter.report($this,'Configuring LAMP')
+      - $.server.configure($mysqlPasswd,$database,$username,$password)
+      - $._environment.reporter.report($this,'LAMP is configured')
+      - $._environment.reporter.report($this,'Configuring WordPress')
+      - If: $._debug
+        Then:
+          - $._environment.reporter.report($this,'updating wordpress database settings')
+      - $script: |
+          #!/bin/bash
+          sudo sed -i -e "s\\define('DB_NAME'.*$\\define('DB_NAME', '{1}');\\" \
+            -e "s\\define('DB_USER'.*$\\define('DB_USER', '{2}');\\" \
+            -e "s\\define('DB_PASSWORD'.*$\\define('DB_PASSWORD', '{3}');\\" \
+            -e "s\\define('AUTH_KEY'.*$\\define('AUTH_KEY',         '{4}');\\" \
+            -e "s\\define('SECURE_AUTH_KEY'.*$\\define('SECURE_AUTH_KEY',  '{5}');\\" \
+            -e "s\\define('LOGGED_IN_KEY'.*$\\define('LOGGED_IN_KEY',    '{6}');\\" \
+            -e "s\\define('NONCE_KEY'.*$\\define('NONCE_KEY',        '{7}');\\" \
+            -e "s\\define('AUTH_SALT'.*$\\define('AUTH_SALT',        '{8}');\\" \
+            -e "s\\define('SECURE_AUTH_SALT'.*$\\define('SECURE_AUTH_SALT', '{9}');\\" \
+            -e "s\\define('LOGGED_IN_SALT'.*$\\define('LOGGED_IN_SALT',   '{10}');\\" \
+            -e "s\\define('NONCE_SALT'.*$\\define('NONCE_SALT',       '{11}');\\" {0}
+      - conf:Linux.runCommand($.server.instance.agent,format(
+          $script,$._wp_config,$database,$username,$password,
+          $._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48),
+          $._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48)))
+      - $._linuxLib.serviceCmd('restart','apache')
+#      - If: $.server.instance.assignFloatingIp
+#        Then:
+#          - $host: $.server.instance.floatingIpAddress
+#        Else:
+#          - $host: $.server.instance.ipAddresses[0]
+      - $host: $.server.instance.ipAddresses[0]
+      - $script: |
+          #/bin/bash
+          curl "http://{0}/wordpress/wp-admin/install.php?step=2" \
+            --data-urlencode "weblog_title=WordPress" \
+            --data-urlencode "user_name={1}" \
+            --data-urlencode "admin_email={1}@example.com" \
+            --data-urlencode "admin_password={2}" \
+            --data-urlencode "admin_password2={2}"
+      - conf:Linux.runCommand($.server.instance.agent,format($script,$host,'admin',$password))
+      - $._environment.reporter.report($this,'WordPress is configured') 
+      - If: $._debug
+        Then:
+          - $._environment.reporter.report($this,'adding fail2ban config')
+      - $fail2ban_name: 'wordpress-murano'
+      - $fail2ban_filter: |
+          [INCLUDES]
+          before = common.conf
+          
+          [Definition]
+          failregex = ^<HOST> .* "POST .*wordpress.*/wp-login.php HTTP/.*" 200
+          ignoreregex =
+      - $._linuxLib.putFail2banFilter($fail2ban_name,$fail2ban_filter)
+      - $fail2ban_jail: |
+          enabled = true
+          port = http,https
+          filter = {0}
+          banaction = iptables-multiport
+      - $._linuxLib.putFail2banJailApacheAccessLog($fail2ban_name,format($fail2ban_jail,$fail2ban_name))
+      - $._linuxLib.serviceCmd('restart','fail2ban')
+      # add backup config files even if backups are not enabled (in case they need to be enabled later)
+      - If: $._debug
+        Then:
+          - $._environment.reporter.report($this,'adding backup config')
+      - $._duplyLib: new(DuplyBackupLib,$,instance => $.server.instance)
+      - $stagingDir: $._duplyLib.stagingDir()
+      - $wp_exclude: |
+          + {0}
+      - If: len($._wp_extra_exclude) > 0
+        Then:
+          - $wp_exclude: $._linuxLib.addNewline($wp_exclude) + $._wp_extra_exclude
+      - $._duplyLib.addExcludeConf('40-wordpress.conf',format($wp_exclude,$._wp_dir))
+      - $._environment.reporter.report($this,'WordPress is available at http://{0}/wordpress'.format($host))
