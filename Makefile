@@ -18,4 +18,4 @@ public:
 	murano package-update --is-public true $$package_id
 
 $(TARGET).zip:
-rm -f $@; cd $(TARGET); zip ../$@ -r *; cd ..
+	rm -f $@; cd $(TARGET); zip ../$@ -r *; cd ..
