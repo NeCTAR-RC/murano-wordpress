@@ -19,7 +19,9 @@ Name: WordPress
 Description: |
   Wordpress is an online publishing / weblog package that makes it very easy,
   almost trivial, to get information out to people on the web.
-Author: QCIF
+  Package author email: support@ehelp.edu.au,
+  Package source URL: https://bitbucket.org/qcif-murano/murano-wordpress.git
+Author: NRC QCIF node
 Tags: [WordPress, Content, Publishing, HTTP, Server, WebServer, HTML]
 Classes:
   au.org.nectar.qriscloud.WordPress: WordPress.yaml
