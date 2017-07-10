@@ -71,7 +71,8 @@ Methods:
                       order allow,deny
                       allow from all
                   </Directory>
-              - conf:Linux.putFile($.server.instance.agent,format($wp_a2conf,$._wp_dir),'/etc/apache2/conf-available/wordpress.conf')
+              - conf:Linux.putFile($.server.instance.agent,format($wp_a2conf,$._wp_dir),
+                  '/etc/apache2/conf-available/wordpress.conf')
               - $script: |
                   #!/bin/bash
                   sudo a2enconf wordpress
@@ -108,6 +109,7 @@ Methods:
       - $.server.configure($mysqlPasswd,$database,$username,$password)
       - $._environment.reporter.report($this,'LAMP is configured')
       - $._environment.reporter.report($this,'Configuring WordPress')
+      - $wp_admin: 'admin'
       - If: $._debug
         Then:
           - $._environment.reporter.report($this,'updating wordpress database settings')
@@ -129,21 +131,24 @@ Methods:
           $._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48),
           $._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48)))
       - $._linuxLib.serviceCmd('restart','apache')
-#      - If: $.server.instance.assignFloatingIp
-#        Then:
-#          - $host: $.server.instance.floatingIpAddress
-#        Else:
-#          - $host: $.server.instance.ipAddresses[0]
-      - $host: $.server.instance.ipAddresses[0]
+      - $proto: 'http'
+      - $curl_opt: ''
+      - If: $.server.https
+        Then:
+          - $proto: 'https'
+          # curl --insecure needed in case we have a self-signed cert
+          - $curl_opt: '--insecure'
+      - $host: $._linuxLib.getDnsName()
       - $script: |
           #/bin/bash
-          curl "http://{0}/wordpress/wp-admin/install.php?step=2" \
+          curl {0} "{1}://{2}/wordpress/wp-admin/install.php?step=2" \
             --data-urlencode "weblog_title=WordPress" \
-            --data-urlencode "user_name={1}" \
-            --data-urlencode "admin_email={1}@example.com" \
-            --data-urlencode "admin_password={2}" \
-            --data-urlencode "admin_password2={2}"
-      - conf:Linux.runCommand($.server.instance.agent,format($script,$host,'admin',$password))
+            --data-urlencode "user_name={3}" \
+            --data-urlencode "admin_email={3}@example.com" \
+            --data-urlencode "admin_password={4}" \
+            --data-urlencode "admin_password2={4}"
+      - conf:Linux.runCommand($.server.instance.agent,format(
+          $script,$curl_opt,$proto,$host,$wp_admin,$password))
       - $._environment.reporter.report($this,'WordPress is configured') 
       - If: $._debug
         Then:
@@ -176,4 +181,5 @@ Methods:
         Then:
           - $wp_exclude: $._linuxLib.addNewline($wp_exclude) + $._wp_extra_exclude
       - $._duplyLib.addExcludeConf('40-wordpress.conf',format($wp_exclude,$._wp_dir))
-      - $._environment.reporter.report($this,'WordPress is available at http://{0}/wordpress'.format($host))
+      - $._environment.reporter.report($this,'WordPress is available at {0}://{1}/wordpress'
+          .format($proto,$host))
