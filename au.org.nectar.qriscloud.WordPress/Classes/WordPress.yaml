@@ -62,6 +62,19 @@ Methods:
               - $._linuxLib.cpFile('/usr/share/wordpress/wp-config-sample.php',$._wp_config)
               - $._linuxLib.chownFile($._wp_config,'root',$._linuxLib.wwwGrp())
               - $._linuxLib.groupReadFile($._wp_config)
+              - $wp_content: format('{0}/wp-content',$._wp_dir)
+              - $._linuxLib.mkDir(format('{0}/upgrade',$wp_content))
+              - $._linuxLib.mkDir(format('{0}/uploads',$wp_content))
+              - For: dir
+                In: [ 'plugins', 'themes', 'upgrade', 'uploads' ]
+                Do:
+                  - $subdir: format('{0}/{1}',$wp_content,$dir)
+                  - $._linuxLib.chownFile($subdir,'root',$._linuxLib.wwwGrp())
+                  - $._linuxLib.groupWriteFile($subdir)
+              - $confOpts: { sep: ',[ \t]*', comment: '// ' }
+              - $updates:
+                  - { key: "define('FS_METHOD'", value: "'direct');", action: "after define.'WP_DEBUG'" }
+              - $._linuxLib.updateConfFile($._wp_config,$updates,$confOpts)
               - $wp_a2conf: |
                   Alias /wordpress {0}
                   
