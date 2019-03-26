@@ -1,4 +1,4 @@
-#  Copyright 2017 Queensland Cyber Infrastructure Foundation
+#  Copyright 2019 Queensland Cyber Infrastructure Foundation
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -62,13 +62,13 @@ Methods:
               - $._linuxLib.cpFile('/usr/share/wordpress/wp-config-sample.php',$._wp_config)
               - $._linuxLib.chownFile($._wp_config,'root',$._linuxLib.wwwGrp())
               - $._linuxLib.groupReadFile($._wp_config)
-              - $wp_content: format('{0}/wp-content',$._wp_dir)
-              - $._linuxLib.mkDir(format('{0}/upgrade',$wp_content))
-              - $._linuxLib.mkDir(format('{0}/uploads',$wp_content))
+              - $wp_content: format('{dir}/wp-content',dir=>$._wp_dir)
+              - $._linuxLib.mkDir(format('{cont}/upgrade',cont=>$wp_content))
+              - $._linuxLib.mkDir(format('{cont}/uploads',cont=>$wp_content))
               - For: dir
                 In: [ 'plugins', 'themes', 'upgrade', 'uploads' ]
                 Do:
-                  - $subdir: format('{0}/{1}',$wp_content,$dir)
+                  - $subdir: format('{cont}/{dir}',cont=>$wp_content,dir=>$dir)
                   - $._linuxLib.chownFile($subdir,'root',$._linuxLib.wwwGrp())
                   - $._linuxLib.groupWriteFile($subdir)
               - $confOpts: { sep: ',[ \t]*', comment: '// ' }
@@ -76,15 +76,15 @@ Methods:
                   - { key: "define('FS_METHOD'", value: "'direct');", action: "after define.'WP_DEBUG'" }
               - $._linuxLib.updateConfFile($._wp_config,$updates,$confOpts)
               - $wp_a2conf: |
-                  Alias /wordpress {0}
+                  Alias /wordpress {dir}
                   
-                  <Directory {0}/>
+                  <Directory {dir}/>
                       Options +FollowSymLinks
                       AllowOverride All
                       order allow,deny
                       allow from all
                   </Directory>
-              - conf:Linux.putFile($.server.instance.agent,format($wp_a2conf,$._wp_dir),
+              - conf:Linux.putFile($.server.instance.agent,format($wp_a2conf,dir=>$._wp_dir),
                   '/etc/apache2/conf-available/wordpress.conf')
               - $script: |
                   #!/bin/bash
@@ -128,21 +128,21 @@ Methods:
           - $._environment.reporter.report($this,'updating wordpress database settings')
       - $script: |
           #!/bin/bash
-          sudo sed -i -e "s\\define('DB_NAME'.*$\\define('DB_NAME', '{1}');\\" \
-            -e "s\\define('DB_USER'.*$\\define('DB_USER', '{2}');\\" \
-            -e "s\\define('DB_PASSWORD'.*$\\define('DB_PASSWORD', '{3}');\\" \
-            -e "s\\define('AUTH_KEY'.*$\\define('AUTH_KEY',         '{4}');\\" \
-            -e "s\\define('SECURE_AUTH_KEY'.*$\\define('SECURE_AUTH_KEY',  '{5}');\\" \
-            -e "s\\define('LOGGED_IN_KEY'.*$\\define('LOGGED_IN_KEY',    '{6}');\\" \
-            -e "s\\define('NONCE_KEY'.*$\\define('NONCE_KEY',        '{7}');\\" \
-            -e "s\\define('AUTH_SALT'.*$\\define('AUTH_SALT',        '{8}');\\" \
-            -e "s\\define('SECURE_AUTH_SALT'.*$\\define('SECURE_AUTH_SALT', '{9}');\\" \
-            -e "s\\define('LOGGED_IN_SALT'.*$\\define('LOGGED_IN_SALT',   '{10}');\\" \
-            -e "s\\define('NONCE_SALT'.*$\\define('NONCE_SALT',       '{11}');\\" {0}
-      - conf:Linux.runCommand($.server.instance.agent,format(
-          $script,$._wp_config,$database,$username,$password,
-          $._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48),
-          $._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48),$._linuxLib.pwGen(48)))
+          sudo sed -i -e "s\\define('DB_NAME'.*$\\define('DB_NAME', '{db}');\\" \
+            -e "s\\define('DB_USER'.*$\\define('DB_USER', '{un}');\\" \
+            -e "s\\define('DB_PASSWORD'.*$\\define('DB_PASSWORD', '{pw}');\\" \
+            -e "s\\define('AUTH_KEY'.*$\\define('AUTH_KEY',         '{akey}');\\" \
+            -e "s\\define('SECURE_AUTH_KEY'.*$\\define('SECURE_AUTH_KEY',  '{sakey}');\\" \
+            -e "s\\define('LOGGED_IN_KEY'.*$\\define('LOGGED_IN_KEY',    '{likey}');\\" \
+            -e "s\\define('NONCE_KEY'.*$\\define('NONCE_KEY',        '{nkey}');\\" \
+            -e "s\\define('AUTH_SALT'.*$\\define('AUTH_SALT',        '{asalt}');\\" \
+            -e "s\\define('SECURE_AUTH_SALT'.*$\\define('SECURE_AUTH_SALT', '{sasalt}');\\" \
+            -e "s\\define('LOGGED_IN_SALT'.*$\\define('LOGGED_IN_SALT',   '{lisalt}');\\" \
+            -e "s\\define('NONCE_SALT'.*$\\define('NONCE_SALT',       '{nsalt}');\\" {cfg}
+      - conf:Linux.runCommand($.server.instance.agent,format($script,cfg=>$._wp_config,db=>$database,
+          un=>$username,pw=>$password,akey=>$._linuxLib.pwGen(48),sakey=>$._linuxLib.pwGen(48),
+          likey=>$._linuxLib.pwGen(48),nkey=>$._linuxLib.pwGen(48),asalt=>$._linuxLib.pwGen(48),
+          sasalt=>$._linuxLib.pwGen(48),lisalt=>$._linuxLib.pwGen(48),nsalt=>$._linuxLib.pwGen(48)))
       - $._linuxLib.serviceCmd('restart','apache')
       - $proto: 'http'
       - $curl_opt: ''
@@ -151,17 +151,17 @@ Methods:
           - $proto: 'https'
           # curl --insecure needed in case we have a self-signed cert
           - $curl_opt: '--insecure'
-      - $host: $._linuxLib.getDnsName()
+      - $host: $.server.fqdn
       - $script: |
           #/bin/bash
-          curl {0} "{1}://{2}/wordpress/wp-admin/install.php?step=2" \
+          curl {opt} "{pr}://{hn}/wordpress/wp-admin/install.php?step=2" \
             --data-urlencode "weblog_title=WordPress" \
-            --data-urlencode "user_name={3}" \
-            --data-urlencode "admin_email={3}@example.com" \
-            --data-urlencode "admin_password={4}" \
-            --data-urlencode "admin_password2={4}"
+            --data-urlencode "user_name={adm}" \
+            --data-urlencode "admin_email={adm}@example.com" \
+            --data-urlencode "admin_password={pw}" \
+            --data-urlencode "admin_password2={pw}"
       - conf:Linux.runCommand($.server.instance.agent,format(
-          $script,$curl_opt,$proto,$host,$wp_admin,$password))
+          $script,opt=>$curl_opt,pr=>$proto,hn=>$host,adm=>$wp_admin,pw=>$password))
       - $._environment.reporter.report($this,'WordPress is configured') 
       - If: $._debug
         Then:
@@ -178,9 +178,9 @@ Methods:
       - $fail2ban_jail: |
           enabled = true
           port = http,https
-          filter = {0}
+          filter = {jn}
           banaction = iptables-multiport
-      - $._linuxLib.putFail2banJailApacheAccessLog($fail2ban_name,format($fail2ban_jail,$fail2ban_name))
+      - $._linuxLib.putFail2banJailApacheAccessLog($fail2ban_name,format($fail2ban_jail,jn=>$fail2ban_name))
       - $._linuxLib.serviceCmd('restart','fail2ban')
       # add backup config files even if backups are not enabled (in case they need to be enabled later)
       - If: $._debug
@@ -189,10 +189,10 @@ Methods:
       - $._duplyLib: new(DuplyBackupLib,$,instance => $.server.instance)
       - $stagingDir: $._duplyLib.stagingDir()
       - $wp_exclude: |
-          + {0}
+          + {dir}
       - If: len($._wp_extra_exclude) > 0
         Then:
           - $wp_exclude: $._linuxLib.addNewline($wp_exclude) + $._wp_extra_exclude
-      - $._duplyLib.addExcludeConf('40-wordpress.conf',format($wp_exclude,$._wp_dir))
-      - $._environment.reporter.report($this,'WordPress is available at {0}://{1}/wordpress'
-          .format($proto,$host))
+      - $._duplyLib.addExcludeConf('40-wordpress.conf',format($wp_exclude,dir=>$._wp_dir))
+      - $._environment.reporter.report($this,format('WordPress is available at {pr}://{hn}/wordpress',
+          pr=>$proto,hn=>$host))
