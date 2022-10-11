@@ -56,6 +56,11 @@ Methods:
           - $distVersion: $._linuxLib.distVersion()
           - $packageList: 'wordpress'
           - $._linuxLib.packageDeploy($packageList)
+          - $script: |
+              #!/bin/bash
+              curl -o /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+              chmod +x /usr/local/bin/wp
+          - conf:Linux.runCommand($.server.instance.agent,$script)
           - If: $distId = 'ubuntu'
             Then:
               - $._wp_config: '/etc/wordpress/config-default.php'
@@ -128,17 +133,18 @@ Methods:
           - $._environment.reporter.report($this,'updating wordpress database settings')
       - $script: |
           #!/bin/bash
-          sudo sed -i -e "s\\define('DB_NAME'.*$\\define('DB_NAME', '{db}');\\" \
-            -e "s\\define('DB_USER'.*$\\define('DB_USER', '{un}');\\" \
-            -e "s\\define('DB_PASSWORD'.*$\\define('DB_PASSWORD', '{pw}');\\" \
-            -e "s\\define('AUTH_KEY'.*$\\define('AUTH_KEY',         '{akey}');\\" \
-            -e "s\\define('SECURE_AUTH_KEY'.*$\\define('SECURE_AUTH_KEY',  '{sakey}');\\" \
-            -e "s\\define('LOGGED_IN_KEY'.*$\\define('LOGGED_IN_KEY',    '{likey}');\\" \
-            -e "s\\define('NONCE_KEY'.*$\\define('NONCE_KEY',        '{nkey}');\\" \
-            -e "s\\define('AUTH_SALT'.*$\\define('AUTH_SALT',        '{asalt}');\\" \
-            -e "s\\define('SECURE_AUTH_SALT'.*$\\define('SECURE_AUTH_SALT', '{sasalt}');\\" \
-            -e "s\\define('LOGGED_IN_SALT'.*$\\define('LOGGED_IN_SALT',   '{lisalt}');\\" \
-            -e "s\\define('NONCE_SALT'.*$\\define('NONCE_SALT',       '{nsalt}');\\" {cfg}
+          wp config set DB_NAME '{db}' --allow-root --config-file={cfg}
+          wp config set DB_USER '{un}' --allow-root --config-file={cfg}
+          wp config set DB_PASSWORD '{pw}' --allow-root --config-file={cfg}
+          wp config set DB_HOST 'localhost' --allow-root --config-file={cfg}
+          wp config set AUTH_KEY '{akey}' --allow-root --config-file={cfg}
+          wp config set SECURE_AUTH_KEY '{sakey}' --allow-root --config-file={cfg}
+          wp config set LOGGED_IN_KEY '{likey}' --allow-root --config-file={cfg}
+          wp config set NONCE_KEY '{nkey}' --allow-root --config-file={cfg}
+          wp config set AUTH_SALT '{asalt}' --allow-root --config-file={cfg}
+          wp config set SECURE_AUTH_SALT '{sasalt}' --allow-root --config-file={cfg}
+          wp config set LOGGED_IN_SALT '{lisalt}' --allow-root --config-file={cfg}
+          wp config set NONCE_SALT '{nsalt}' --allow-root --config-file={cfg}
       - conf:Linux.runCommand($.server.instance.agent,format($script,cfg=>$._wp_config,db=>$database,
           un=>$username,pw=>$password,akey=>$._linuxLib.pwGen(48),sakey=>$._linuxLib.pwGen(48),
           likey=>$._linuxLib.pwGen(48),nkey=>$._linuxLib.pwGen(48),asalt=>$._linuxLib.pwGen(48),
